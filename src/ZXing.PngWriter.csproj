@@ -4,13 +4,15 @@
     <TargetFramework>netcoreapp3.0</TargetFramework>
     <nullable>enable</nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Authors>Craig Beaumont</Authors>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/craig-b/ZXing.PngWriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/craig-b/ZXing.PngWriter</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>ZXing Png Barcode QrCode Qr</PackageTags>
+    <Description>A barcode generator for creating png image streams using ZXing.Net</Description>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="ConsoleApp\**" />
-    <EmbeddedResource Remove="ConsoleApp\**" />
-    <None Remove="ConsoleApp\**" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Zlib.Portable.Core" Version="1.0.0" />
