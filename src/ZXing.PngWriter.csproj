@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <nullable>enable</nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="ConsoleApp\**" />
+    <EmbeddedResource Remove="ConsoleApp\**" />
+    <None Remove="ConsoleApp\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Zlib.Portable.Core" Version="1.0.0" />
+    <PackageReference Include="CRC.Fast.Net.Core" Version="1.0.0" />
+    <PackageReference Include="zxing.Net" Version="0.16.4" />
+  </ItemGroup>
+
+</Project>
