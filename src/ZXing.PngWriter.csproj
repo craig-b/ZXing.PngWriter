@@ -17,7 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Zlib.Portable.Core" Version="1.0.0" />
     <PackageReference Include="CRC.Fast.Net.Core" Version="1.0.0" />
-    <PackageReference Include="zxing.Net" Version="0.16.4" />
+    <PackageReference Include="zxing.Net" Version="0.16.5" />
   </ItemGroup>
 
 </Project>
