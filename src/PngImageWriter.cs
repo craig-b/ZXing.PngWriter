@@ -69,7 +69,7 @@ namespace ZXing.PngWriter
             var totalMargin = _widthInBytes - currentScanLine.Length;
             var leftMargin = totalMargin / 2;
             var rightMargin = totalMargin - leftMargin;
-            if (previousScanLine.Length != 0 && currentScanLine.SequenceEqualTo(previousScanLine))
+            if (previousScanLine.Length != 0 && currentScanLine.SequenceEqual(previousScanLine))
             {
                 _toDeflateStream.WriteByte(2);
                 _toDeflateStream.Write(_emptyScanLine.Span);
@@ -84,7 +84,7 @@ namespace ZXing.PngWriter
                 _toDeflateStream.Write(currentScanLine);
                 if (rightMargin > 0)
                     _toDeflateStream.Write(_blankScanLine.Span.Slice(0, rightMargin));
-                if (currentScanLine.SequenceEqualTo(_blankScanLine.Span.Slice(0, currentScanLine.Length))) _blankLines = 1;
+                if (currentScanLine.SequenceEqual(_blankScanLine.Span)) _blankLines = 1;
                 else _blankLines = 0;
             }
             _linesWritten++;

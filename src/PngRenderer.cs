@@ -73,8 +73,8 @@ namespace ZXing.PngWriter
             for (int y = 0; y < matrix.Height; y++)
             {
                 var bitArray = matrix.getRow(y, null);
-                bitArray.Array.Negate();
                 var currentScanLine = bitArray.GetBytes();
+                currentScanLine.Negate();
                 currentScanLine.ReverseBits();
                 pngImageWriter.WriteLine(currentScanLine, previousScanLine);
                 previousScanLine = currentScanLine;

@@ -22,8 +22,8 @@ namespace ZXing.PngWriter
     public class PngWriter : BarcodeWriter<Stream>
     {
         public PngWriter() => Renderer = new PngRenderer();
-
-        public Stream Write(string contents, TextualInformation textualInformation)
+        
+        public Stream Write(string contents, TextualInformation? textualInformation)
         {
             if (!(Renderer is PngRenderer pngRenderer))
             {
