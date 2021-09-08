@@ -5,6 +5,10 @@ VisualStudioVersion = 16.0.29306.81
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ZXing.PngWriter", "src\ZXing.PngWriter.csproj", "{D104F5D9-CE86-4E9A-96FD-66A0C5C43FBF}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ConsoleApp1", "ConsoleApp1\ConsoleApp1.csproj", "{68E997C1-8278-4F69-B7CC-DF34F235B1F8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZXing.PngWriter_Tests", "ZXing.PngWriter_Tests\ZXing.PngWriter_Tests.csproj", "{5DA83584-207E-4DBA-9D7D-5B510E5ABEB7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{D104F5D9-CE86-4E9A-96FD-66A0C5C43FBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D104F5D9-CE86-4E9A-96FD-66A0C5C43FBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D104F5D9-CE86-4E9A-96FD-66A0C5C43FBF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{68E997C1-8278-4F69-B7CC-DF34F235B1F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68E997C1-8278-4F69-B7CC-DF34F235B1F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68E997C1-8278-4F69-B7CC-DF34F235B1F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68E997C1-8278-4F69-B7CC-DF34F235B1F8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5DA83584-207E-4DBA-9D7D-5B510E5ABEB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DA83584-207E-4DBA-9D7D-5B510E5ABEB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DA83584-207E-4DBA-9D7D-5B510E5ABEB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DA83584-207E-4DBA-9D7D-5B510E5ABEB7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -17,12 +17,13 @@
 using Ionic.Zlib;
 using Soft160.Data.Cryptography;
 using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 
 namespace ZXing.PngWriter
 {
-    internal sealed class PngImageWriter : IDisposable
+    internal ref struct PngImageWriter //: IDisposable
     {
         public PngImageWriter(int width, int height, TextualInformation? textualInformation = null)
         {
@@ -39,7 +40,7 @@ namespace ZXing.PngWriter
                     WriteChunk(item.Type, item.Data);
                 }
             }
-            _toDeflateStream = new MemoryStream((_widthInBytes + 1) * height);
+            _toDeflateStream = new PooledStream.PooledMemoryStream(ArrayPool<byte>.Shared, (_widthInBytes + 1) * height);
 
             _emptyScanLine = new Memory<byte>(new byte[_widthInBytes]);
             _blankScanLine = new Memory<byte>(new byte[_widthInBytes]);
@@ -53,9 +54,9 @@ namespace ZXing.PngWriter
         private int _height;
         private int _blankLines = -1;
 
-        private MemoryStream? _toDeflateStream;
+        private Stream? _toDeflateStream;
 
-        public MemoryStream Stream { get; } = new MemoryStream();
+        public Stream Stream { get; } = new MemoryStream();
 
         public void WriteLine() => WriteLine(_blankScanLine.Span);
 
@@ -114,7 +115,7 @@ namespace ZXing.PngWriter
                     _toDeflateStream.CopyTo(deflateStream);
                 }
                 var deflatedBuffer = deflateBackingStream.GetBuffer().AsSpan().Slice(0, (int)deflateBackingStream.Length);
-                WriteChunk(datType, deflatedBuffer);
+                WriteChunk(DatType, deflatedBuffer);
             }
             _toDeflateStream.Dispose();
             _toDeflateStream = null;
@@ -144,11 +145,11 @@ namespace ZXing.PngWriter
 
         public void Dispose() => _toDeflateStream?.Dispose();
 
-        private static readonly byte[] pngSignature = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+        private static ReadOnlySpan<byte> PngSignature => new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
 
         private void WritePngHeader() =>
             // write png signature
-            Stream.Write(pngSignature);
+            Stream.Write(PngSignature);
 
         private void WriteHdr(int width, int height) => WriteHdr((uint)width, (uint)height);
 
@@ -198,20 +199,20 @@ namespace ZXing.PngWriter
             // interlace method (1 byte)
             hdrData[12] = 0;
 
-            WriteChunk(hdrType, hdrData);
+            WriteChunk(HdrType, hdrData);
         }
 
-        private static readonly byte[] datType = new[] { (byte)'I', (byte)'D', (byte)'A', (byte)'T' };
-        private static readonly byte[] hdrType = new[] { (byte)'I', (byte)'H', (byte)'D', (byte)'R' };
-        private static readonly byte[] endType = new[] { (byte)'I', (byte)'E', (byte)'N', (byte)'D' };
+        private static ReadOnlySpan<byte> DatType => new[] { (byte)'I', (byte)'D', (byte)'A', (byte)'T' };
+        private static ReadOnlySpan<byte> HdrType => new[] { (byte)'I', (byte)'H', (byte)'D', (byte)'R' };
+        private static ReadOnlySpan<byte> EndType => new[] { (byte)'I', (byte)'E', (byte)'N', (byte)'D' };
 
         private void WriteEnd() =>
             //var endTypeAndData = new[] { (byte)'I', (byte)'E', (byte)'N', (byte)'D' };
-            WriteChunk(endType);
+            WriteChunk(EndType);
 
-        private void WriteChunk(Span<byte> chunkType) => WriteChunk(chunkType, Span<byte>.Empty);
+        private void WriteChunk(ReadOnlySpan<byte> chunkType) => WriteChunk(chunkType, Span<byte>.Empty);
 
-        private void WriteChunk(Span<byte> chunkType, Span<byte> chunkData)
+        private void WriteChunk(ReadOnlySpan<byte> chunkType, Span<byte> chunkData)
         {
             /*
              *  ┌─────────┬─────────────┬────────────┬────────────────────┐

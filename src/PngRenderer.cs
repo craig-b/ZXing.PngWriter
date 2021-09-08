@@ -68,23 +68,33 @@ namespace ZXing.PngWriter
                 var requiredWidth = PngImageTextWriter.GetRequiredWidth(content);
                 width = Math.Max(width, requiredWidth);
             }
-            using var pngImageWriter = new PngImageWriter(width, matrix.Height, textualInformation);
-            var previousScanLine = Span<byte>.Empty;
-            for (int y = 0; y < matrix.Height; y++)
+            var pngImageWriter = new PngImageWriter(width, matrix.Height, textualInformation);
+            try
             {
-                var bitArray = matrix.getRow(y, null);
-                var currentScanLine = bitArray.GetBytes();
-                currentScanLine.Negate();
-                currentScanLine.ReverseBits();
-                pngImageWriter.WriteLine(currentScanLine, previousScanLine);
-                previousScanLine = currentScanLine;
+                Span<byte> previousScanLine = stackalloc byte[(matrix.Width + 31) >> 3]; //Span<byte>.Empty;
+                Span<byte> vectorSizedArray = stackalloc byte[((matrix.Width + 255) & ~0b1111_1111) >> 3];
+                for (int y = 0; y < matrix.Height; y++)
+                {
+                    var bitArray = matrix.getRow(y, null);
+                    bitArray.GetBytes().CopyTo(vectorSizedArray);
+                    vectorSizedArray.Negate();
+                    vectorSizedArray.ReverseBits();
+                    var currentScanLine = vectorSizedArray.Slice(0, bitArray.SizeInBytes);
+                    pngImageWriter.WriteLine(currentScanLine, previousScanLine);
+                    currentScanLine.CopyTo(previousScanLine);
+                    //previousScanLine = currentScanLine;
+                }
+                if (includeText)
+                {
+                    PngImageTextWriter.Write(ref pngImageWriter, content);
+                }
+                pngImageWriter.Finish();
+                return pngImageWriter.Stream;
             }
-            if (includeText)
+            finally
             {
-                PngImageTextWriter.Write(pngImageWriter, content);
+                pngImageWriter.Dispose();
             }
-            pngImageWriter.Finish();
-            return pngImageWriter.Stream;
         }
     }
 }

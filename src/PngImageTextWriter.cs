@@ -34,7 +34,7 @@ namespace ZXing.PngWriter
         /// </summary>
         /// <param name="pngImageWriter"></param>
         /// <param name="text"></param>
-        public static void Write(PngImageWriter pngImageWriter, string text)
+        public static void Write(ref PngImageWriter pngImageWriter, string text)
         {
             pngImageWriter.EnsureBlankScanLines(13);
             pngImageWriter.WriteLine();

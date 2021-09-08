@@ -16,6 +16,9 @@
 
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("ZXing.PngWriter_Tests")]
 
 namespace ZXing.PngWriter
 {
