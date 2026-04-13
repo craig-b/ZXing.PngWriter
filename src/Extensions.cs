@@ -84,11 +84,8 @@ namespace ZXing.PngWriter
         public static void ReverseBits(this Span<byte> span)
         {
             var vectors = MemoryMarshal.Cast<byte, Vector<byte>>(span);
-            var mask_F0 = new Vector<byte>(0xF0);
             var mask_0F = new Vector<byte>(0x0F);
-            var mask_CC = new Vector<byte>(0xCC);
             var mask_33 = new Vector<byte>(0x33);
-            var mask_AA = new Vector<byte>(0xAA);
             var mask_55 = new Vector<byte>(0x55);
             for (int i = 0; i < vectors.Length; i++)
             {
