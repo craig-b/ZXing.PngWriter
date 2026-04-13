@@ -3,7 +3,7 @@ An extremely fast barcode generator binding for ZXing.Net
 
 Built for .NET 8+ this library takes advantage of `Span<T>`, `Vector<T>` SIMD, and `ArrayPool<T>` to produce png `Stream`s with minimal overhead.
 
-4 to 30 times faster than other ZXing.Net bindings with the resulting file being up to 100x smaller!
+A QR code for `https://example.com` is just **417 bytes**.
 
 [![NuGet](https://img.shields.io/nuget/v/ZXing.PngWriter "Download from NuGet")](https://www.nuget.org/packages/ZXing.PngWriter)
 
