@@ -17,9 +17,8 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using ZXing.Common;
 
 namespace ZXing.PngWriter
@@ -55,151 +54,55 @@ namespace ZXing.PngWriter
 
         public static Span<byte> GetBytes(this BitArray bitArray) => MemoryMarshal.AsBytes<int>(bitArray.Array).Slice(0, bitArray.SizeInBytes);
 
-        public static unsafe void Negate(this Span<byte> span)
+        public static void Negate(this Span<byte> span)
         {
-            var bytesNegated = 0;
-            if (Avx2.IsSupported)
-            {
-                var vectorCount = span.Length / 32;
-                fixed (byte* ptr = span)
-                {
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-                        var currentPtr = ptr + (i * 32);
-                        Avx.Store(currentPtr, Avx2.AndNot(Avx.LoadVector256(currentPtr), Vector256.Create(byte.MaxValue)));
-                        bytesNegated += 32;
-                    }
-                }
-            }
-            else if (Sse2.IsSupported)
-            {
-                var vectorCount = span.Length / 16;
-                fixed (byte* ptr = span)
-                {
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-                        var currentPtr = ptr + (i * 16);
-                        Sse2.Store(currentPtr, Sse2.AndNot(Sse2.LoadVector128(currentPtr), Vector128.Create(byte.MaxValue)));
-                        bytesNegated += 16;
-                    }
-                }
-            }
-            for (int i = bytesNegated; i < span.Length; i++)
-            {
+            var vectors = MemoryMarshal.Cast<byte, Vector<byte>>(span);
+            var allOnes = Vector<byte>.AllBitsSet;
+            for (int i = 0; i < vectors.Length; i++)
+                vectors[i] = Vector.Xor(vectors[i], allOnes);
+            for (int i = vectors.Length * Vector<byte>.Count; i < span.Length; i++)
                 span[i] = (byte)~span[i];
-            }
         }
 
-        public static unsafe void Negate(this Span<int> span)
+        public static void Negate(this Span<int> span)
         {
-            var intsNegated = 0;
-            if (Avx2.IsSupported)
-            {
-                var vectorCount = span.Length / 8;
-                fixed (int* ptr = &span[0])
-                {
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-                        var currentPtr = ptr + (i * 8);
-                        Avx.Store(currentPtr, Avx2.AndNot(Avx.LoadVector256(currentPtr), Vector256.Create(-1)));
-                        intsNegated += 8;
-                    }
-                }
-            }
-            else if (Sse2.IsSupported)
-            {
-                var vectorCount = span.Length / 4;
-                fixed (int* ptr = &span[0])
-                {
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-                        var currentPtr = ptr + (i * 4);
-                        Sse2.Store(currentPtr, Sse2.AndNot(Sse2.LoadVector128(currentPtr), Vector128.Create(-1)));
-                        intsNegated += 4;
-                    }
-                }
-            }
-            for (int i = intsNegated; i < span.Length; i++)
-            {
+            var vectors = MemoryMarshal.Cast<int, Vector<int>>(span);
+            var allOnes = Vector<int>.AllBitsSet;
+            for (int i = 0; i < vectors.Length; i++)
+                vectors[i] = Vector.Xor(vectors[i], allOnes);
+            for (int i = vectors.Length * Vector<int>.Count; i < span.Length; i++)
                 span[i] = ~span[i];
-            }
         }
 
-        public static unsafe void ReverseBits(this Span<int> span)
+        public static void ReverseBits(this Span<int> span)
         {
-            var intsReversed = 0;
-
-            if (Avx2.IsSupported)
-            {
-                fixed (int* ptr = span)
-                {
-                    var vectorCount = span.Length / 8;
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-
-                        var vector = Avx.LoadVector256((ptr + intsReversed));
-                        var vector2 = Avx2.And(Avx2.And(vector, Vector256.Create(0xFF00FF)), Vector256.Create(-16711936));
-                        vector =
-                            Avx2.Add(
-                                Avx2.Or(
-                                    Avx2.ShiftRightLogical(vector, 8),
-                                    Avx2.ShiftLeftLogical(vector, 24)
-                                ),
-                                Avx2.Or(
-                                    Avx2.ShiftLeftLogical(vector2, 8),
-                                    Avx2.ShiftRightLogical(vector2, 24)
-                                 )
-                            );
-
-                        Avx.Store(ptr + intsReversed, vector);
-                        intsReversed += 8;
-                    }
-                }
-            }
-
-            for (int i = intsReversed; i < span.Length; i++)
-            {
+            for (int i = 0; i < span.Length; i++)
                 span[i] = BinaryPrimitives.ReverseEndianness(span[i]);
-            }
-
-            fixed (void* ptr = span)
-            {
-                new Span<byte>(ptr, span.Length * 4).ReverseBits();
-            }
+            MemoryMarshal.AsBytes(span).ReverseBits();
         }
 
-        static readonly Vector256<ushort> BitShiftMask_F0F0 = Vector256.Create((ushort)0xF0F0);
-        static readonly Vector256<ushort> BitShiftMask_0F0F = Vector256.Create((ushort)0x0F0F);
-        static readonly Vector256<ushort> BitShiftMask_CCCC = Vector256.Create((ushort)0xCCCC);
-        static readonly Vector256<ushort> BitShiftMask_3333 = Vector256.Create((ushort)0x3333);
-        static readonly Vector256<ushort> BitShiftMask_AAAA = Vector256.Create((ushort)0xAAAA);
-        static readonly Vector256<ushort> BitShiftMask_5555 = Vector256.Create((ushort)0x5555);
-
-        public static unsafe void ReverseBits(this Span<byte> span)
+        public static void ReverseBits(this Span<byte> span)
         {
-            var bytesReversed = 0;
-
-            if (Avx2.IsSupported)
+            var vectors = MemoryMarshal.Cast<byte, Vector<byte>>(span);
+            var mask_0F = new Vector<byte>(0x0F);
+            var mask_33 = new Vector<byte>(0x33);
+            var mask_55 = new Vector<byte>(0x55);
+            for (int i = 0; i < vectors.Length; i++)
             {
-                fixed (byte* ptr = span)
-                {
-                    var vectorCount = span.Length / 32;
-                    for (int i = 0; i < vectorCount; i++)
-                    {
-                        var vector = Avx.LoadVector256((ushort*)(ptr + bytesReversed));
-                        vector = Avx2.Or(Avx2.ShiftRightLogical(Avx2.And(vector, BitShiftMask_F0F0), 4), Avx2.ShiftLeftLogical(Avx2.And(vector, BitShiftMask_0F0F), 4));
-                        vector = Avx2.Or(Avx2.ShiftRightLogical(Avx2.And(vector, BitShiftMask_CCCC), 2), Avx2.ShiftLeftLogical(Avx2.And(vector, BitShiftMask_3333), 2));
-                        vector = Avx2.Or(Avx2.ShiftRightLogical(Avx2.And(vector, BitShiftMask_AAAA), 1), Avx2.ShiftLeftLogical(Avx2.And(vector, BitShiftMask_5555), 1));
-                        Avx.Store((ushort*)(ptr + bytesReversed), vector);
-                        bytesReversed += 32;
-                    }
-                }
+                var v = vectors[i];
+                v = Vector.BitwiseOr(
+                    Vector.BitwiseAnd(Vector.ShiftRightLogical(v, 4), mask_0F),
+                    Vector.ShiftLeft(Vector.BitwiseAnd(v, mask_0F), 4));
+                v = Vector.BitwiseOr(
+                    Vector.BitwiseAnd(Vector.ShiftRightLogical(v, 2), mask_33),
+                    Vector.ShiftLeft(Vector.BitwiseAnd(v, mask_33), 2));
+                v = Vector.BitwiseOr(
+                    Vector.BitwiseAnd(Vector.ShiftRightLogical(v, 1), mask_55),
+                    Vector.ShiftLeft(Vector.BitwiseAnd(v, mask_55), 1));
+                vectors[i] = v;
             }
-
-            for (int i = bytesReversed; i < span.Length; i++)
-            {
+            for (int i = vectors.Length * Vector<byte>.Count; i < span.Length; i++)
                 span[i] = span[i].ReverseBits();
-            }
         }
     }
 }

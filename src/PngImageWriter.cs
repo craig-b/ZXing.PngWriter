@@ -113,7 +113,7 @@ namespace ZXing.PngWriter
                 _toDeflateStream.CopyTo(deflateStream);
             }
             var deflatedBuffer = deflateBackingStream.GetBuffer().AsSpan().Slice(0, (int)deflateBackingStream.Length);
-            WriteChunk(datType, deflatedBuffer);
+            WriteChunk(DatType, deflatedBuffer);
             _toDeflateStream.Dispose();
             _toDeflateStream = null;
 
@@ -157,11 +157,11 @@ namespace ZXing.PngWriter
 
         public void Dispose() => _toDeflateStream?.Dispose();
 
-        private static readonly byte[] pngSignature = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+        private static ReadOnlySpan<byte> PngSignature => [137, 80, 78, 71, 13, 10, 26, 10];
 
         private void WritePngHeader() =>
             // write png signature
-            Stream.Write(pngSignature);
+            Stream.Write(PngSignature);
 
         private void WriteHdr(int width, int height) => WriteHdr((uint)width, (uint)height);
 
@@ -211,20 +211,18 @@ namespace ZXing.PngWriter
             // interlace method (1 byte)
             hdrData[12] = 0;
 
-            WriteChunk(hdrType, hdrData);
+            WriteChunk(HdrType, hdrData);
         }
 
-        private static readonly byte[] datType = new[] { (byte)'I', (byte)'D', (byte)'A', (byte)'T' };
-        private static readonly byte[] hdrType = new[] { (byte)'I', (byte)'H', (byte)'D', (byte)'R' };
-        private static readonly byte[] endType = new[] { (byte)'I', (byte)'E', (byte)'N', (byte)'D' };
+        private static ReadOnlySpan<byte> DatType => "IDAT"u8;
+        private static ReadOnlySpan<byte> HdrType => "IHDR"u8;
+        private static ReadOnlySpan<byte> EndType => "IEND"u8;
 
-        private void WriteEnd() =>
-            //var endTypeAndData = new[] { (byte)'I', (byte)'E', (byte)'N', (byte)'D' };
-            WriteChunk(endType);
+        private void WriteEnd() => WriteChunk(EndType);
 
-        private void WriteChunk(Span<byte> chunkType) => WriteChunk(chunkType, Span<byte>.Empty);
+        private void WriteChunk(ReadOnlySpan<byte> chunkType) => WriteChunk(chunkType, ReadOnlySpan<byte>.Empty);
 
-        private void WriteChunk(Span<byte> chunkType, Span<byte> chunkData)
+        private void WriteChunk(ReadOnlySpan<byte> chunkType, ReadOnlySpan<byte> chunkData)
         {
             /*
              *  ┌─────────┬─────────────┬────────────┬────────────────────┐
