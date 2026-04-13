@@ -17,7 +17,6 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -29,38 +28,21 @@ namespace ZXing.PngWriter
     {
         public static void WriteInt(this Stream stream, int value)
         {
-            stream.WriteByte((byte)(value >> 24));
-            stream.WriteByte((byte)(value >> 16));
-            stream.WriteByte((byte)(value >> 8));
-            stream.WriteByte((byte)value);
+            Span<byte> buf = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(buf, value);
+            stream.Write(buf);
         }
 
         public static void WriteUInt(this Stream stream, uint value)
         {
-            stream.WriteByte((byte)(value >> 24));
-            stream.WriteByte((byte)(value >> 16));
-            stream.WriteByte((byte)(value >> 8));
-            stream.WriteByte((byte)value);
+            Span<byte> buf = stackalloc byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(buf, value);
+            stream.Write(buf);
         }
 
-        public static void WriteLong(this Stream stream, long value)
+        public static void SetUInt(this Span<byte> span, uint value, int position)
         {
-            stream.WriteByte((byte)(value >> 56));
-            stream.WriteByte((byte)(value >> 48));
-            stream.WriteByte((byte)(value >> 40));
-            stream.WriteByte((byte)(value >> 32));
-            stream.WriteByte((byte)(value >> 24));
-            stream.WriteByte((byte)(value >> 16));
-            stream.WriteByte((byte)(value >> 8));
-            stream.WriteByte((byte)value);
-        }
-
-        public static void SetUInt(this Span<byte> array, uint value, int position)
-        {
-            array[position] = (byte)(value >> 24);
-            array[++position] = (byte)(value >> 16);
-            array[++position] = (byte)(value >> 8);
-            array[++position] = (byte)value;
+            BinaryPrimitives.WriteUInt32BigEndian(span.Slice(position), value);
         }
 
         private static byte ReverseBits(this byte b)

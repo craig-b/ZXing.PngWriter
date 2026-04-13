@@ -26,7 +26,7 @@ namespace ZXing.PngWriter
     {
         public PngImageWriter(int width, int height, TextualInformation? textualInformation = null)
         {
-            _widthInBytes = width + 7 >> 3;
+            _widthInBytes = (width + 7) >> 3;
             _height = height;
 
             WritePngHeader();
@@ -106,16 +106,14 @@ namespace ZXing.PngWriter
             if (_toDeflateStream == null) ThrowDisposedException();
             if (_linesWritten < _height) throw new InvalidOperationException($"Written {_linesWritten:n0} lines, expected {_height:n0}");
 
-            using (var deflateBackingStream = new MemoryStream())
+            var deflateBackingStream = new MemoryStream();
+            using (var deflateStream = new ZLibStream(deflateBackingStream, CompressionMode.Compress, true))
             {
-                using (var deflateStream = new ZLibStream(deflateBackingStream, CompressionMode.Compress, true))
-                {
-                    _toDeflateStream.Position = 0;
-                    _toDeflateStream.CopyTo(deflateStream);
-                }
-                var deflatedBuffer = deflateBackingStream.GetBuffer().AsSpan().Slice(0, (int)deflateBackingStream.Length);
-                WriteChunk(datType, deflatedBuffer);
+                _toDeflateStream.Position = 0;
+                _toDeflateStream.CopyTo(deflateStream);
             }
+            var deflatedBuffer = deflateBackingStream.GetBuffer().AsSpan().Slice(0, (int)deflateBackingStream.Length);
+            WriteChunk(datType, deflatedBuffer);
             _toDeflateStream.Dispose();
             _toDeflateStream = null;
 
