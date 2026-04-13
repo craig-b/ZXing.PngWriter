@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <nullable>enable</nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
     <Authors>Craig Beaumont</Authors>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>

@@ -109,9 +109,9 @@ namespace ZXing.PngWriter
 
         public static implicit operator TextData(string value) => new TextData(value);
 
-        private static readonly byte[] tEXt = new byte[] { (byte)'t', (byte)'E', (byte)'X', (byte)'t' };
-        private static readonly byte[] zTXt = new byte[] { (byte)'z', (byte)'T', (byte)'X', (byte)'t' };
-        private static readonly byte[] iTXt = new byte[] { (byte)'i', (byte)'T', (byte)'X', (byte)'t' };
+        private static readonly byte[] tEXt = "tEXt"u8.ToArray();
+        private static readonly byte[] zTXt = "zTXt"u8.ToArray();
+        private static readonly byte[] iTXt = "iTXt"u8.ToArray();
 
         private static readonly Encoding Latin1Encoder = Encoding.GetEncoding("Latin1");
 
