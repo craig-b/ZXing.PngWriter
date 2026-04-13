@@ -139,6 +139,15 @@ namespace ZXing.PngWriter
             var position = stream.Position;
             stream.Position = _heightPosition;
             stream.WriteUInt((uint)height);
+
+            // Recalculate CRC over chunk type (4 bytes) + chunk data (13 bytes)
+            var chunkTypePosition = _heightPosition - 8;
+            stream.Position = chunkTypePosition;
+            Span<byte> typeAndData = stackalloc byte[4 + 13];
+            stream.Read(typeAndData);
+            var crcHash = CRC.Crc32(typeAndData);
+            stream.WriteUInt(crcHash);
+
             stream.Position = position;
         }
 
