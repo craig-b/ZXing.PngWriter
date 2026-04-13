@@ -144,7 +144,14 @@ namespace ZXing.PngWriter
             var chunkTypePosition = _heightPosition - 8;
             stream.Position = chunkTypePosition;
             Span<byte> typeAndData = stackalloc byte[4 + 13];
-            stream.Read(typeAndData);
+            var totalRead = 0;
+            while (totalRead < typeAndData.Length)
+            {
+                var bytesRead = stream.Read(typeAndData.Slice(totalRead));
+                if (bytesRead == 0)
+                    throw new EndOfStreamException("Unable to read IHDR chunk data needed to recalculate CRC.");
+                totalRead += bytesRead;
+            }
             var crcHash = CRC.Crc32(typeAndData);
             stream.WriteUInt(crcHash);
 
