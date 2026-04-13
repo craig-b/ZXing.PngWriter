@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ZXing.PngWriter.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.IO.Hashing" Version="10.0.5" />
     <PackageReference Include="zxing.Net" Version="0.16.5" />
   </ItemGroup>
