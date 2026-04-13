@@ -7,6 +7,34 @@ Built for .NET 8+ this library takes advantage of `Span<T>`, `Vector<T>` SIMD, a
 
 [![NuGet](https://img.shields.io/nuget/v/ZXing.PngWriter "Download from NuGet")](https://www.nuget.org/packages/ZXing.PngWriter)
 
+## Usage
+
+```csharp
+var writer = new PngWriter
+{
+    Format = BarcodeFormat.QR_CODE
+};
+
+using var stream = writer.Write("https://example.com");
+```
+
+With PNG metadata:
+
+```csharp
+var writer = new PngWriter
+{
+    Format = BarcodeFormat.QR_CODE
+};
+
+var textInfo = new TextualInformation
+{
+    Software = "My App",
+    Comment = "Generated QR code"
+};
+
+using var stream = writer.Write("https://example.com", textInfo);
+```
+
 ## Performance
 
 Generates **up to ~8,000 QR codes per second** on a single thread (120–580 μs depending on content size).
