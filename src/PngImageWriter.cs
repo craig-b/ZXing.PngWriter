@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-using Ionic.Zlib;
-using Soft160.Data.Cryptography;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.IO.Compression;
+using System.IO.Hashing;
 
 namespace ZXing.PngWriter
 {
@@ -108,7 +108,7 @@ namespace ZXing.PngWriter
 
             using (var deflateBackingStream = new MemoryStream())
             {
-                using (var deflateStream = new ZlibStream(deflateBackingStream, CompressionMode.Compress, true))
+                using (var deflateStream = new ZLibStream(deflateBackingStream, CompressionMode.Compress, true))
                 {
                     _toDeflateStream.Position = 0;
                     _toDeflateStream.CopyTo(deflateStream);
@@ -152,8 +152,7 @@ namespace ZXing.PngWriter
                     throw new EndOfStreamException("Unable to read IHDR chunk data needed to recalculate CRC.");
                 totalRead += bytesRead;
             }
-            var crcHash = CRC.Crc32(typeAndData);
-            stream.WriteUInt(crcHash);
+            stream.WriteUInt(Crc32.HashToUInt32(typeAndData));
 
             stream.Position = position;
         }
@@ -243,10 +242,11 @@ namespace ZXing.PngWriter
             stream.WriteInt(chunkData.Length);
             stream.Write(chunkType);
             stream.Write(chunkData);
-            var crcHash = CRC.Crc32(chunkType);
+            var crc = new Crc32();
+            crc.Append(chunkType);
             if (chunkData.Length > 0)
-                crcHash = CRC.Crc32(chunkData, crcHash);
-            stream.WriteUInt(crcHash);
+                crc.Append(chunkData);
+            stream.WriteUInt(crc.GetCurrentHashAsUInt32());
         }
     }
 }

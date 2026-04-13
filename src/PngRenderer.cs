@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-using Ionic.Zlib;
-using Soft160.Data.Cryptography;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;

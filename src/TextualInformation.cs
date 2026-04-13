@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-using Ionic.Zlib;
+using System.IO.Compression;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -153,7 +153,7 @@ namespace ZXing.PngWriter
         private static ReadOnlySpan<byte> CompressBytes(byte[] values)
         {
             using var stream = new MemoryStream();
-            using (var zlibStream = new ZlibStream(stream, CompressionMode.Compress, true))
+            using (var zlibStream = new ZLibStream(stream, CompressionMode.Compress, true))
             {
                 zlibStream.Write(values);
             }
