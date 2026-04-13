@@ -18,8 +18,6 @@ using System.IO.Compression;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Text;
 
 namespace ZXing.PngWriter
@@ -88,16 +86,16 @@ namespace ZXing.PngWriter
 
         public IEnumerable<(byte[] Type, byte[] Data)> GetDataBlocks()
         {
-            if (Title != null) yield return TextData.GetTypeAndData(() => Title);
-            if (Author != null) yield return TextData.GetTypeAndData(() => Author);
-            if (Description != null) yield return TextData.GetTypeAndData(() => Description);
-            if (Copyright != null) yield return TextData.GetTypeAndData(() => Copyright);
-            if (CreationTime != null) yield return TextData.GetTypeAndData(() => CreationTime);
-            if (Software != null) yield return TextData.GetTypeAndData(() => Software);
-            if (Disclaimer != null) yield return TextData.GetTypeAndData(() => Disclaimer);
-            if (Warning != null) yield return TextData.GetTypeAndData(() => Warning);
-            if (Source != null) yield return TextData.GetTypeAndData(() => Source);
-            if (Comment != null) yield return TextData.GetTypeAndData(() => Comment);
+            if (Title != null) yield return Title.GetTypeAndData(nameof(Title));
+            if (Author != null) yield return Author.GetTypeAndData(nameof(Author));
+            if (Description != null) yield return Description.GetTypeAndData(nameof(Description));
+            if (Copyright != null) yield return Copyright.GetTypeAndData(nameof(Copyright));
+            if (CreationTime != null) yield return CreationTime.GetTypeAndData(nameof(CreationTime));
+            if (Software != null) yield return Software.GetTypeAndData(nameof(Software));
+            if (Disclaimer != null) yield return Disclaimer.GetTypeAndData(nameof(Disclaimer));
+            if (Warning != null) yield return Warning.GetTypeAndData(nameof(Warning));
+            if (Source != null) yield return Source.GetTypeAndData(nameof(Source));
+            if (Comment != null) yield return Comment.GetTypeAndData(nameof(Comment));
         }
     }
 
@@ -202,18 +200,9 @@ namespace ZXing.PngWriter
             return data;
         }
 
-        internal static (byte[] Type, byte[] Data) GetTypeAndData(Expression<Func<TextData>> property)
+        internal (byte[] Type, byte[] Data) GetTypeAndData(string keyword)
         {
-            var textData = property.Compile()();
-            var name = GetMemberInfo(property).Name;
-            return (textData.GetTypeBytes(), textData.GetDataBytes(name));
-        }
-
-        private static MemberInfo GetMemberInfo(Expression expression)
-        {
-            var lambdaExpression = (LambdaExpression)expression;
-            var memberExpression = (!(lambdaExpression.Body is UnaryExpression)) ? ((MemberExpression)lambdaExpression.Body) : ((MemberExpression)((UnaryExpression)lambdaExpression.Body).Operand);
-            return memberExpression.Member;
+            return (GetTypeBytes(), GetDataBytes(keyword));
         }
     }
 }
