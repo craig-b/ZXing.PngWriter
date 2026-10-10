@@ -15,6 +15,7 @@
  */
 
 using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
@@ -22,12 +23,26 @@ using System.IO.Hashing;
 
 namespace ZXing.PngWriter
 {
+    internal enum PngCompression
+    {
+        /// <summary>
+        /// Up-filtered scan lines compressed with <see cref="ZLibStream"/>
+        /// </summary>
+        ZLib,
+
+        /// <summary>
+        /// Scan lines written directly as a fixed Huffman deflate block by <see cref="FixedHuffmanDeflater"/>
+        /// </summary>
+        FixedHuffman,
+    }
+
     internal sealed class PngImageWriter : IDisposable
     {
-        public PngImageWriter(int width, int height, TextualInformation? textualInformation = null)
+        public PngImageWriter(int width, int height, TextualInformation? textualInformation = null, PngCompression compression = PngCompression.FixedHuffman)
         {
             _widthInBytes = (width + 7) >> 3;
             _height = height;
+            _compression = compression;
 
             WritePngHeader();
             WriteHdr(width, height);
@@ -39,86 +54,161 @@ namespace ZXing.PngWriter
                     WriteChunk(item.Type, item.Data);
                 }
             }
-            _toDeflateStream = new MemoryStream((_widthInBytes + 1) * height);
 
-            _emptyScanLine = new Memory<byte>(new byte[_widthInBytes]);
-            _blankScanLine = new Memory<byte>(new byte[_widthInBytes]);
-            _blankScanLine.Span.Fill(byte.MaxValue);
+            _rows = ArrayPool<byte>.Shared.Rent(Math.Max(1, _widthInBytes * height));
+            _runOffsets = ArrayPool<int>.Shared.Rent(Math.Max(1, height));
+            _runCounts = ArrayPool<int>.Shared.Rent(Math.Max(1, height));
         }
 
         private readonly int _widthInBytes;
-        private readonly Memory<byte> _emptyScanLine;
-        private readonly Memory<byte> _blankScanLine;
+        private readonly PngCompression _compression;
         private int _linesWritten;
         private int _height;
-        private int _blankLines = -1;
+        private bool _disposed;
 
-        private MemoryStream? _toDeflateStream;
+        // each run is a distinct scan line (excluding filter byte) and the number of consecutive times it appears
+        private byte[] _rows;
+        private int[] _runOffsets;
+        private int[] _runCounts;
+        private int _runCount;
 
         public MemoryStream Stream { get; } = new MemoryStream();
 
-        public void WriteLine() => WriteLine(_blankScanLine.Span);
+        public void WriteLine() => WriteLine(Span<byte>.Empty);
 
         public void WriteLine(Span<byte> currentScanLine) => WriteLine(currentScanLine, Span<byte>.Empty);
 
+        /// <summary>
+        /// Writes a scan line, centred and padded with white if narrower than the image.
+        /// </summary>
+        /// <param name="currentScanLine">Scan line to write; empty for a blank (white) line</param>
+        /// <param name="previousScanLine">Unused; repeated scan lines are detected by comparing with the last line written</param>
         public void WriteLine(Span<byte> currentScanLine, Span<byte> previousScanLine)
         {
-            if (_toDeflateStream == null) ThrowDisposedException();
+            if (_disposed) ThrowDisposedException();
             if (_linesWritten >= _height) throw new InvalidOperationException($"Already written {_linesWritten} lines");
+            if (currentScanLine.Length > _widthInBytes) throw new ArgumentException($"Scan line is {currentScanLine.Length} bytes, image is {_widthInBytes} bytes wide", nameof(currentScanLine));
 
-            var totalMargin = _widthInBytes - currentScanLine.Length;
-            var leftMargin = totalMargin / 2;
-            var rightMargin = totalMargin - leftMargin;
-            if (previousScanLine.Length != 0 && currentScanLine.SequenceEqual(previousScanLine))
+            var offset = _runCount == 0 ? 0 : _runOffsets[_runCount - 1] + _widthInBytes;
+            EnsureRowCapacity(offset + _widthInBytes);
+            var row = _rows.AsSpan(offset, _widthInBytes);
+
+            var leftMargin = (_widthInBytes - currentScanLine.Length) / 2;
+            row.Fill(byte.MaxValue);
+            currentScanLine.CopyTo(row.Slice(leftMargin));
+
+            if (_runCount > 0 && row.SequenceEqual(_rows.AsSpan(_runOffsets[_runCount - 1], _widthInBytes)))
             {
-                _toDeflateStream.WriteByte(2);
-                _toDeflateStream.Write(_emptyScanLine.Span);
-                if (_blankLines > 0) _blankLines++;
+                _runCounts[_runCount - 1]++;
             }
             else
             {
-                // first line or different to previous
-                _toDeflateStream.WriteByte(0);
-                if (leftMargin > 0)
-                    _toDeflateStream.Write(_blankScanLine.Span.Slice(0, leftMargin));
-                _toDeflateStream.Write(currentScanLine);
-                if (rightMargin > 0)
-                    _toDeflateStream.Write(_blankScanLine.Span.Slice(0, rightMargin));
-                if (currentScanLine.SequenceEqual(_blankScanLine.Span)) _blankLines = 1;
-                else _blankLines = 0;
+                if (_runCount == _runOffsets.Length) GrowRuns();
+                _runOffsets[_runCount] = offset;
+                _runCounts[_runCount] = 1;
+                _runCount++;
             }
             _linesWritten++;
         }
 
+        /// <summary>
+        /// Ensures the next <paramref name="scanLineCount"/> lines written will be over blank lines,
+        /// reusing trailing blank lines already written and increasing the image height if necessary.
+        /// </summary>
         public void EnsureBlankScanLines(int scanLineCount)
         {
-            if (_toDeflateStream == null) ThrowDisposedException();
+            if (_disposed) ThrowDisposedException();
 
-            var linesToMoveBack = _blankLines > 0 ? Math.Min(scanLineCount, _blankLines) : 0;
+            var trailingBlankLines = 0;
+            if (_runCount > 0 && !_rows.AsSpan(_runOffsets[_runCount - 1], _widthInBytes).ContainsAnyExcept(byte.MaxValue))
+                trailingBlankLines = _runCounts[_runCount - 1];
+
+            var linesToMoveBack = Math.Min(scanLineCount, trailingBlankLines);
             var linesToAdd = scanLineCount - linesToMoveBack;
             UpdateHeight(linesToAdd + _height);
             _linesWritten -= linesToMoveBack;
-            _toDeflateStream.Position -= ((_widthInBytes + 1) * linesToMoveBack);
+            if (linesToMoveBack > 0)
+            {
+                _runCounts[_runCount - 1] -= linesToMoveBack;
+                if (_runCounts[_runCount - 1] == 0) _runCount--;
+            }
         }
 
         public void Finish()
         {
-            if (_toDeflateStream == null) ThrowDisposedException();
+            if (_disposed) ThrowDisposedException();
             if (_linesWritten < _height) throw new InvalidOperationException($"Written {_linesWritten:n0} lines, expected {_height:n0}");
+
+            if (_compression == PngCompression.FixedHuffman)
+                WriteFixedHuffmanData();
+            else
+                WriteZLibData();
+            Dispose();
+
+            WriteEnd();
+            Stream.Position = 0;
+        }
+
+        private void WriteFixedHuffmanData()
+        {
+            var stream = Stream;
+            var lengthPosition = stream.Position;
+            stream.WriteInt(0);
+            stream.Write(DatType);
+
+            FixedHuffmanDeflater.Write(stream, _rows, _runOffsets.AsSpan(0, _runCount), _runCounts.AsSpan(0, _runCount), _widthInBytes);
+
+            var dataLength = (int)(stream.Position - lengthPosition - 8);
+            stream.WriteUInt(Crc32.HashToUInt32(stream.GetBuffer().AsSpan((int)lengthPosition + 4, 4 + dataLength)));
+            var endPosition = stream.Position;
+            stream.Position = lengthPosition;
+            stream.WriteInt(dataLength);
+            stream.Position = endPosition;
+        }
+
+        private void WriteZLibData()
+        {
+            var stride = _widthInBytes + 1;
+            using var toDeflateStream = new MemoryStream(stride * _height);
+            var upFilteredLine = new byte[stride];
+            upFilteredLine[0] = 2;
+            for (int r = 0; r < _runCount; r++)
+            {
+                toDeflateStream.WriteByte(0);
+                toDeflateStream.Write(_rows, _runOffsets[r], _widthInBytes);
+                for (int i = 1; i < _runCounts[r]; i++)
+                    toDeflateStream.Write(upFilteredLine);
+            }
 
             var deflateBackingStream = new MemoryStream();
             using (var deflateStream = new ZLibStream(deflateBackingStream, CompressionMode.Compress, true))
             {
-                _toDeflateStream.Position = 0;
-                _toDeflateStream.CopyTo(deflateStream);
+                toDeflateStream.Position = 0;
+                toDeflateStream.CopyTo(deflateStream);
             }
             var deflatedBuffer = deflateBackingStream.GetBuffer().AsSpan().Slice(0, (int)deflateBackingStream.Length);
             WriteChunk(DatType, deflatedBuffer);
-            _toDeflateStream.Dispose();
-            _toDeflateStream = null;
+        }
 
-            WriteEnd();
-            Stream.Position = 0;
+        private void EnsureRowCapacity(int length)
+        {
+            if (length <= _rows.Length) return;
+            var rows = ArrayPool<byte>.Shared.Rent(Math.Max(length, _rows.Length * 2));
+            _rows.AsSpan(0, _runOffsets[_runCount - 1] + _widthInBytes).CopyTo(rows);
+            ArrayPool<byte>.Shared.Return(_rows);
+            _rows = rows;
+        }
+
+        private void GrowRuns()
+        {
+            var runOffsets = ArrayPool<int>.Shared.Rent(_runOffsets.Length * 2);
+            var runCounts = ArrayPool<int>.Shared.Rent(_runCounts.Length * 2);
+            _runOffsets.AsSpan(0, _runCount).CopyTo(runOffsets);
+            _runCounts.AsSpan(0, _runCount).CopyTo(runCounts);
+            ArrayPool<int>.Shared.Return(_runOffsets);
+            ArrayPool<int>.Shared.Return(_runCounts);
+            _runOffsets = runOffsets;
+            _runCounts = runCounts;
         }
 
         [DoesNotReturn]
@@ -155,7 +245,14 @@ namespace ZXing.PngWriter
             stream.Position = position;
         }
 
-        public void Dispose() => _toDeflateStream?.Dispose();
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            ArrayPool<byte>.Shared.Return(_rows);
+            ArrayPool<int>.Shared.Return(_runOffsets);
+            ArrayPool<int>.Shared.Return(_runCounts);
+        }
 
         private static ReadOnlySpan<byte> PngSignature => [137, 80, 78, 71, 13, 10, 26, 10];
 

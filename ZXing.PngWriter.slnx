@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/ZXing.PngWriter.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">
     <Project Path="tests/ZXing.PngWriter.Tests.csproj" />

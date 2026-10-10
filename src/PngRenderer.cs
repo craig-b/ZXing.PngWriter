@@ -27,6 +27,11 @@ namespace ZXing.PngWriter
     internal class PngRenderer : IBarcodeRenderer<Stream>
     {
         /// <summary>
+        /// How the image data is compressed
+        /// </summary>
+        internal PngCompression Compression { get; set; } = PngCompression.FixedHuffman;
+
+        /// <summary>
         /// Renders the specified matrix to its graphically representation
         /// </summary>
         /// <param name="matrix">The matrix.</param>
@@ -66,7 +71,7 @@ namespace ZXing.PngWriter
                 var requiredWidth = PngImageTextWriter.GetRequiredWidth(content);
                 width = Math.Max(width, requiredWidth);
             }
-            using var pngImageWriter = new PngImageWriter(width, matrix.Height, textualInformation);
+            using var pngImageWriter = new PngImageWriter(width, matrix.Height, textualInformation, Compression);
             var previousScanLine = Span<byte>.Empty;
             for (int y = 0; y < matrix.Height; y++)
             {
