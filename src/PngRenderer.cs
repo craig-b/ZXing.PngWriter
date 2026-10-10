@@ -15,6 +15,7 @@
  */
 
 using System;
+using System.Buffers;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -72,15 +73,33 @@ namespace ZXing.PngWriter
                 width = Math.Max(width, requiredWidth);
             }
             using var pngImageWriter = new PngImageWriter(width, matrix.Height, textualInformation, Compression);
-            var previousScanLine = Span<byte>.Empty;
-            for (int y = 0; y < matrix.Height; y++)
+            // one BitArray reused for every row; its bits are transformed in place, so the untransformed bits of the
+            // previous row are kept separately to detect repeated rows before doing any work on them
+            BitArray? bitArray = null;
+            int[]? previousRow = null;
+            try
             {
-                var bitArray = matrix.getRow(y, null);
-                var currentScanLine = bitArray.GetBytes();
-                currentScanLine.Negate();
-                currentScanLine.ReverseBits();
-                pngImageWriter.WriteLine(currentScanLine, previousScanLine);
-                previousScanLine = currentScanLine;
+                for (int y = 0; y < matrix.Height; y++)
+                {
+                    bitArray = matrix.getRow(y, bitArray);
+                    var bits = bitArray.Array.AsSpan();
+                    if (previousRow != null && bits.SequenceEqual(previousRow.AsSpan(0, bits.Length)))
+                    {
+                        pngImageWriter.RepeatLine();
+                        continue;
+                    }
+                    previousRow ??= ArrayPool<int>.Shared.Rent(bits.Length);
+                    bits.CopyTo(previousRow);
+
+                    var currentScanLine = bitArray.GetBytes();
+                    currentScanLine.Negate();
+                    currentScanLine.ReverseBits();
+                    pngImageWriter.WriteLine(currentScanLine);
+                }
+            }
+            finally
+            {
+                if (previousRow != null) ArrayPool<int>.Shared.Return(previousRow);
             }
             if (includeText)
             {

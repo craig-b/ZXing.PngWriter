@@ -81,14 +81,11 @@ namespace ZXing.PngWriter
 
         public void WriteLine() => WriteLine(Span<byte>.Empty);
 
-        public void WriteLine(Span<byte> currentScanLine) => WriteLine(currentScanLine, Span<byte>.Empty);
-
         /// <summary>
         /// Writes a scan line, centred and padded with white if narrower than the image.
         /// </summary>
         /// <param name="currentScanLine">Scan line to write; empty for a blank (white) line</param>
-        /// <param name="previousScanLine">Unused; repeated scan lines are detected by comparing with the last line written</param>
-        public void WriteLine(Span<byte> currentScanLine, Span<byte> previousScanLine)
+        public void WriteLine(Span<byte> currentScanLine)
         {
             if (_disposed) ThrowDisposedException();
             if (_linesWritten >= _height) throw new InvalidOperationException($"Already written {_linesWritten} lines");
@@ -113,6 +110,19 @@ namespace ZXing.PngWriter
                 _runCounts[_runCount] = 1;
                 _runCount++;
             }
+            _linesWritten++;
+        }
+
+        /// <summary>
+        /// Writes the same scan line as the last one written.
+        /// </summary>
+        public void RepeatLine()
+        {
+            if (_disposed) ThrowDisposedException();
+            if (_linesWritten >= _height) throw new InvalidOperationException($"Already written {_linesWritten} lines");
+            if (_runCount == 0) throw new InvalidOperationException("No scan line has been written to repeat");
+
+            _runCounts[_runCount - 1]++;
             _linesWritten++;
         }
 
@@ -161,7 +171,8 @@ namespace ZXing.PngWriter
             stream.WriteInt(0);
             stream.Write(DatType);
 
-            PngDeflater.Write(stream, _rows, _runOffsets.AsSpan(0, _runCount), _runCounts.AsSpan(0, _runCount), _widthInBytes, dynamicHuffman);
+            // reserve the IDAT CRC and the IEND chunk so the stream is allocated once at its final size
+            PngDeflater.Write(stream, _rows, _runOffsets.AsSpan(0, _runCount), _runCounts.AsSpan(0, _runCount), _widthInBytes, dynamicHuffman, reserveAfter: 4 + 12);
 
             var dataLength = (int)(stream.Position - lengthPosition - 8);
             stream.WriteUInt(Crc32.HashToUInt32(stream.GetBuffer().AsSpan((int)lengthPosition + 4, 4 + dataLength)));

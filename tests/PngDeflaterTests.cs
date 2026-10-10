@@ -71,6 +71,18 @@ public class PngDeflaterTests
     }
 
     [Theory]
+    [MemberData(nameof(Barcodes))]
+    public void Deflater_AllocatesOutputAtFinalSize(bool dynamicHuffman, BarcodeFormat format, string content, int width, int height, bool pureBarcode)
+    {
+        var compression = dynamicHuffman ? PngCompression.DynamicHuffman : PngCompression.FixedHuffman;
+        var stream = (MemoryStream)CreateWriter(format, width, height, pureBarcode, compression).Write(content);
+
+        // the header chunks' first write grows the stream to MemoryStream's minimum of 256 bytes;
+        // after that the image data grows it once to exactly its final length
+        Assert.Equal(Math.Max(stream.Length, 256), stream.Capacity);
+    }
+
+    [Theory]
     [InlineData(false, BarcodeFormat.QR_CODE, "https://example.com")]
     [InlineData(false, BarcodeFormat.CODE_128, "Hello World")]
     [InlineData(false, BarcodeFormat.DATA_MATRIX, "Hello World")]

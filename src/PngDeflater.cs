@@ -18,6 +18,7 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 
 namespace ZXing.PngWriter
@@ -44,6 +45,40 @@ namespace ZXing.PngWriter
         // order code length code lengths are written in the dynamic block header
         private static ReadOnlySpan<byte> CodeLengthOrder => [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
+        /*
+         *  Fixed Huffman code lengths
+         *  ┌─────────┬──────┐
+         *  │ Symbol  │ Bits │
+         *  ├─────────┼──────┤
+         *  │   0-143 │ 8    │
+         *  │ 144-255 │ 9    │
+         *  │ 256-279 │ 7    │
+         *  │ 280-287 │ 8    │
+         *  └─────────┴──────┘
+         *  all 30 distance codes are 5 bits
+         */
+        private static readonly byte[] FixedLiteralLengthLengths = CreateFixedLiteralLengthLengths();
+        private static readonly byte[] FixedDistanceLengths = [.. Enumerable.Repeat((byte)5, DistanceSymbols)];
+        private static readonly ushort[] FixedLiteralLengthCodes = CreateCodes(FixedLiteralLengthLengths);
+        private static readonly ushort[] FixedDistanceCodes = CreateCodes(FixedDistanceLengths);
+
+        private static byte[] CreateFixedLiteralLengthLengths()
+        {
+            var lengths = new byte[288];
+            lengths.AsSpan(0, 144).Fill(8);
+            lengths.AsSpan(144, 112).Fill(9);
+            lengths.AsSpan(256, 24).Fill(7);
+            lengths.AsSpan(280, 8).Fill(8);
+            return lengths;
+        }
+
+        private static ushort[] CreateCodes(byte[] lengths)
+        {
+            var codes = new ushort[lengths.Length];
+            BuildCodes(lengths, codes);
+            return codes;
+        }
+
         /// <summary>
         /// Writes a zlib stream for the image described by runs of identical scan lines.
         /// </summary>
@@ -53,7 +88,8 @@ namespace ZXing.PngWriter
         /// <param name="runCounts">Number of consecutive times each run's scan line appears in the image</param>
         /// <param name="widthInBytes">Length of a scan line excluding the filter byte</param>
         /// <param name="dynamicHuffman">Whether to use Huffman codes built for this image when they're smaller than the fixed codes</param>
-        public static void Write(Stream output, ReadOnlySpan<byte> rows, ReadOnlySpan<int> runOffsets, ReadOnlySpan<int> runCounts, int widthInBytes, bool dynamicHuffman)
+        /// <param name="reserveAfter">Bytes the caller will write after the zlib stream; a <see cref="MemoryStream"/> output is grown once to fit them</param>
+        public static void Write(Stream output, ReadOnlySpan<byte> rows, ReadOnlySpan<int> runOffsets, ReadOnlySpan<int> runCounts, int widthInBytes, bool dynamicHuffman, int reserveAfter = 0)
         {
             var stride = widthInBytes + 1;
             var runCount = runOffsets.Length;
@@ -109,7 +145,7 @@ namespace ZXing.PngWriter
                 // zlib header: deflate, 32K window, no preset dictionary, check bits making it a multiple of 31
                 writer.WriteByteAligned(0x78);
                 writer.WriteByteAligned(0x01);
-                WriteBlock(ref writer, tokens, dynamicHuffman);
+                WriteBlock(ref writer, tokens, dynamicHuffman, output, reserveAfter);
                 writer.AlignToByte();
                 var adler = (s2 << 16) | s1;
                 writer.WriteByteAligned((byte)(adler >> 24));
@@ -170,13 +206,16 @@ namespace ZXing.PngWriter
 
         /// <summary>
         /// Writes <paramref name="tokens"/> as the final deflate block, with dynamic Huffman codes if allowed and smaller, otherwise fixed codes.
+        /// Before writing, grows <paramref name="output"/> (if a <see cref="MemoryStream"/>) to fit the block, the zlib trailer and <paramref name="reserveAfter"/> more bytes.
         /// </summary>
-        private static void WriteBlock(ref BitWriter writer, TokenList tokens, bool dynamicHuffman)
+        private static void WriteBlock(ref BitWriter writer, TokenList tokens, bool dynamicHuffman, Stream output, int reserveAfter)
         {
             Span<int> literalLengthFrequencies = stackalloc int[LiteralLengthSymbols];
             Span<int> distanceFrequencies = stackalloc int[DistanceSymbols];
             literalLengthFrequencies.Clear();
             distanceFrequencies.Clear();
+            // extra bits are the same whichever codes are used
+            long extraBits = 0;
             for (int i = 0; i < tokens.Count; i++)
             {
                 var (length, value) = tokens[i];
@@ -185,37 +224,25 @@ namespace ZXing.PngWriter
                     literalLengthFrequencies[value]++;
                     continue;
                 }
-                var distanceSymbol = GetDistanceSymbol(value).Symbol;
+                var distanceSymbol = GetDistanceSymbol(value);
                 for (var remaining = length; remaining > 0;)
                 {
                     var take = NextMatchLength(remaining);
-                    literalLengthFrequencies[GetLengthSymbol(take).Symbol]++;
-                    distanceFrequencies[distanceSymbol]++;
+                    var lengthSymbol = GetLengthSymbol(take);
+                    literalLengthFrequencies[lengthSymbol.Symbol]++;
+                    distanceFrequencies[distanceSymbol.Symbol]++;
+                    extraBits += lengthSymbol.ExtraBits + distanceSymbol.ExtraBits;
                     remaining -= take;
                 }
             }
             literalLengthFrequencies[EndOfBlock]++;
 
-            Span<byte> literalLengthLengths = stackalloc byte[288];
-            Span<byte> distanceLengths = stackalloc byte[32];
-            /*
-             *  Fixed Huffman code lengths
-             *  ┌─────────┬──────┐
-             *  │ Symbol  │ Bits │
-             *  ├─────────┼──────┤
-             *  │   0-143 │ 8    │
-             *  │ 144-255 │ 9    │
-             *  │ 256-279 │ 7    │
-             *  │ 280-287 │ 8    │
-             *  └─────────┴──────┘
-             *  all 30 distance codes are 5 bits
-             */
-            literalLengthLengths.Slice(0, 144).Fill(8);
-            literalLengthLengths.Slice(144, 112).Fill(9);
-            literalLengthLengths.Slice(256, 24).Fill(7);
-            literalLengthLengths.Slice(280, 8).Fill(8);
-            distanceLengths.Fill(5);
-            var fixedBits = 3 + CodeBits(literalLengthFrequencies, literalLengthLengths) + CodeBits(distanceFrequencies, distanceLengths);
+            var blockBits = 3 + extraBits + CodeBits(literalLengthFrequencies, FixedLiteralLengthLengths) + CodeBits(distanceFrequencies, FixedDistanceLengths);
+
+            // no prefix code can use fewer bits than the entropy of the symbols, and the dynamic header is at least 29 bits,
+            // so only build dynamic codes when they could be smaller
+            if (dynamicHuffman)
+                dynamicHuffman = 3 + 5 + 5 + 4 + (3 * 4) + extraBits + EntropyBits(literalLengthFrequencies) + EntropyBits(distanceFrequencies) < blockBits;
 
             Span<byte> dynamicLiteralLengthLengths = stackalloc byte[LiteralLengthSymbols];
             Span<byte> dynamicDistanceLengths = stackalloc byte[DistanceSymbols];
@@ -224,17 +251,20 @@ namespace ZXing.PngWriter
             int headerSymbolCount = 0, literalLengthCount = 0, distanceCount = 0, codeLengthCount = 0;
             if (dynamicHuffman)
             {
-                // inflaters may reject a distance code with fewer than two symbols, so make sure there are two
+                // inflaters may reject a distance code with fewer than two symbols, so give unused symbols a code if needed
+                Span<int> distanceCodeFrequencies = stackalloc int[DistanceSymbols];
+                distanceFrequencies.CopyTo(distanceCodeFrequencies);
                 var distancesUsed = 0;
-                foreach (var f in distanceFrequencies) if (f > 0) distancesUsed++;
-                if (distancesUsed < 2)
+                foreach (var f in distanceCodeFrequencies) if (f > 0) distancesUsed++;
+                for (int i = 0; distancesUsed < 2; i++)
                 {
-                    if (distanceFrequencies[0] == 0) distanceFrequencies[0] = 1; else distanceFrequencies[1] = 1;
-                    if (distancesUsed == 0) distanceFrequencies[1] = 1;
+                    if (distanceCodeFrequencies[i] != 0) continue;
+                    distanceCodeFrequencies[i] = 1;
+                    distancesUsed++;
                 }
 
                 BuildCodeLengths(literalLengthFrequencies, dynamicLiteralLengthLengths, MaxCodeLength);
-                BuildCodeLengths(distanceFrequencies, dynamicDistanceLengths, MaxCodeLength);
+                BuildCodeLengths(distanceCodeFrequencies, dynamicDistanceLengths, MaxCodeLength);
 
                 literalLengthCount = LiteralLengthSymbols;
                 while (literalLengthCount > 257 && dynamicLiteralLengthLengths[literalLengthCount - 1] == 0) literalLengthCount--;
@@ -255,16 +285,28 @@ namespace ZXing.PngWriter
                 codeLengthCount = CodeLengthSymbols;
                 while (codeLengthCount > 4 && codeLengthLengths[CodeLengthOrder[codeLengthCount - 1]] == 0) codeLengthCount--;
 
-                long dynamicBits = 3 + 5 + 5 + 4 + (3 * codeLengthCount);
+                long dynamicBits = 3 + 5 + 5 + 4 + (3 * codeLengthCount) + extraBits;
                 for (int i = 0; i < headerSymbolCount; i++)
                     dynamicBits += codeLengthLengths[headerSymbols[i] & 0xFF] + CodeLengthExtraBits(headerSymbols[i] & 0xFF);
                 dynamicBits += CodeBits(literalLengthFrequencies, dynamicLiteralLengthLengths) + CodeBits(distanceFrequencies, dynamicDistanceLengths);
 
-                dynamicHuffman = dynamicBits < fixedBits;
+                dynamicHuffman = dynamicBits < blockBits;
+                if (dynamicHuffman) blockBits = dynamicBits;
             }
 
-            Span<ushort> literalLengthCodes = stackalloc ushort[288];
-            Span<ushort> distanceCodes = stackalloc ushort[32];
+            // the block starts byte aligned after the zlib header, and is followed by padding and the 4 byte Adler-32
+            if (output is MemoryStream memoryStream)
+            {
+                var required = memoryStream.Position + writer.BufferedBytes + ((blockBits + 7) >> 3) + 4 + reserveAfter;
+                if (required > memoryStream.Capacity) memoryStream.Capacity = (int)required;
+            }
+
+            Span<ushort> dynamicLiteralLengthCodes = stackalloc ushort[LiteralLengthSymbols];
+            Span<ushort> dynamicDistanceCodes = stackalloc ushort[DistanceSymbols];
+            scoped ReadOnlySpan<byte> literalLengthLengths = FixedLiteralLengthLengths;
+            scoped ReadOnlySpan<byte> distanceLengths = FixedDistanceLengths;
+            scoped ReadOnlySpan<ushort> literalLengthCodes = FixedLiteralLengthCodes;
+            scoped ReadOnlySpan<ushort> distanceCodes = FixedDistanceCodes;
             if (dynamicHuffman)
             {
                 // BFINAL = 1, BTYPE = 10 (dynamic Huffman)
@@ -280,20 +322,22 @@ namespace ZXing.PngWriter
                 {
                     var symbol = headerSymbols[i] & 0xFF;
                     writer.WriteBits(codeLengthCodes[symbol], codeLengthLengths[symbol]);
-                    var extraBits = CodeLengthExtraBits(symbol);
-                    if (extraBits > 0) writer.WriteBits((uint)(headerSymbols[i] >> 8), extraBits);
+                    var symbolExtraBits = CodeLengthExtraBits(symbol);
+                    if (symbolExtraBits > 0) writer.WriteBits((uint)(headerSymbols[i] >> 8), symbolExtraBits);
                 }
 
+                BuildCodes(dynamicLiteralLengthLengths, dynamicLiteralLengthCodes);
+                BuildCodes(dynamicDistanceLengths, dynamicDistanceCodes);
                 literalLengthLengths = dynamicLiteralLengthLengths;
                 distanceLengths = dynamicDistanceLengths;
+                literalLengthCodes = dynamicLiteralLengthCodes;
+                distanceCodes = dynamicDistanceCodes;
             }
             else
             {
                 // BFINAL = 1, BTYPE = 01 (fixed Huffman)
                 writer.WriteBits(0b011, 3);
             }
-            BuildCodes(literalLengthLengths, literalLengthCodes);
-            BuildCodes(distanceLengths, distanceCodes);
 
             for (int i = 0; i < tokens.Count; i++)
             {
@@ -326,6 +370,20 @@ namespace ZXing.PngWriter
             long bits = 0;
             for (int i = 0; i < frequencies.Length; i++) bits += (long)frequencies[i] * lengths[i];
             return bits;
+        }
+
+        /// <summary>
+        /// Lower bound on the bits any prefix code can use for symbols with <paramref name="frequencies"/>.
+        /// </summary>
+        private static long EntropyBits(ReadOnlySpan<int> frequencies)
+        {
+            long total = 0;
+            foreach (var f in frequencies) total += f;
+            double bits = 0;
+            foreach (var f in frequencies)
+                if (f > 0) bits += f * Math.Log2((double)total / f);
+            // round down, allowing for floating point error
+            return Math.Max(0, (long)bits - 1);
         }
 
         /// <summary>
@@ -690,6 +748,11 @@ namespace ZXing.PngWriter
             private int _position;
             private ulong _bits;
             private int _bitCount;
+
+            /// <summary>
+            /// Whole bytes written but not yet flushed to the output
+            /// </summary>
+            public readonly int BufferedBytes => _position;
 
             /// <summary>
             /// Writes the low <paramref name="count"/> bits of <paramref name="value"/>, least significant first (at most 32 bits).
