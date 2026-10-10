@@ -7,43 +7,59 @@ using PngWriter = ZXing.PngWriter.PngWriter;
 
 namespace ZXing.PngWriter.Tests;
 
-public class FixedHuffmanDeflaterTests
+public class PngDeflaterTests
 {
-    public static TheoryData<BarcodeFormat, string, int, int, bool> Barcodes => new()
+    private static readonly bool[] DynamicHuffman = [false, true];
+
+    public static TheoryData<bool, BarcodeFormat, string, int, int, bool> Barcodes
     {
-        { BarcodeFormat.QR_CODE, "1", 0, 0, true },
-        { BarcodeFormat.QR_CODE, "https://example.com", 0, 0, true },
-        { BarcodeFormat.QR_CODE, "https://example.com", 300, 300, true },
-        { BarcodeFormat.QR_CODE, "https://example.com", 301, 301, false },
-        { BarcodeFormat.QR_CODE, new string('x', 1500), 2500, 2500, true },
-        { BarcodeFormat.DATA_MATRIX, "Hello World", 0, 0, true },
-        { BarcodeFormat.AZTEC, "Hello World", 200, 200, true },
-        { BarcodeFormat.PDF_417, "Hello World", 0, 0, true },
-        { BarcodeFormat.CODE_128, "Hello World", 0, 0, true },
-        { BarcodeFormat.CODE_128, "Hello World", 333, 120, false },
-        { BarcodeFormat.EAN_13, "5901234123457", 0, 0, false },
-        { BarcodeFormat.ITF, "1234567890", 3000, 50, true },
-    };
+        get
+        {
+            var data = new TheoryData<bool, BarcodeFormat, string, int, int, bool>();
+            foreach (var dynamicHuffman in DynamicHuffman)
+                foreach (var (format, content, width, height, pureBarcode) in BarcodeCases)
+                    data.Add(dynamicHuffman, format, content, width, height, pureBarcode);
+            return data;
+        }
+    }
+
+    private static readonly (BarcodeFormat, string, int, int, bool)[] BarcodeCases =
+    [
+        (BarcodeFormat.QR_CODE, "1", 0, 0, true),
+        (BarcodeFormat.QR_CODE, "https://example.com", 0, 0, true),
+        (BarcodeFormat.QR_CODE, "https://example.com", 300, 300, true),
+        (BarcodeFormat.QR_CODE, "https://example.com", 301, 301, false),
+        (BarcodeFormat.QR_CODE, new string('x', 1500), 2500, 2500, true),
+        (BarcodeFormat.DATA_MATRIX, "Hello World", 0, 0, true),
+        (BarcodeFormat.AZTEC, "Hello World", 200, 200, true),
+        (BarcodeFormat.PDF_417, "Hello World", 0, 0, true),
+        (BarcodeFormat.CODE_128, "Hello World", 0, 0, true),
+        (BarcodeFormat.CODE_128, "Hello World", 333, 120, false),
+        (BarcodeFormat.EAN_13, "5901234123457", 0, 0, false),
+        (BarcodeFormat.ITF, "1234567890", 3000, 50, true),
+    ];
 
     [Theory]
     [MemberData(nameof(Barcodes))]
-    public void FixedHuffman_DecodesToSamePixelsAsZLib(BarcodeFormat format, string content, int width, int height, bool pureBarcode)
+    public void Deflater_DecodesToSamePixelsAsZLib(bool dynamicHuffman, BarcodeFormat format, string content, int width, int height, bool pureBarcode)
     {
-        var fixedHuffman = Decode(Generate(format, content, width, height, pureBarcode, PngCompression.FixedHuffman));
+        var compression = dynamicHuffman ? PngCompression.DynamicHuffman : PngCompression.FixedHuffman;
+        var deflated = Decode(Generate(format, content, width, height, pureBarcode, compression));
         var zlib = Decode(Generate(format, content, width, height, pureBarcode, PngCompression.ZLib));
 
-        Assert.Equal(zlib.Width, fixedHuffman.Width);
-        Assert.Equal(zlib.Height, fixedHuffman.Height);
-        Assert.Equal(zlib.Pixels, fixedHuffman.Pixels);
+        Assert.Equal(zlib.Width, deflated.Width);
+        Assert.Equal(zlib.Height, deflated.Height);
+        Assert.Equal(zlib.Pixels, deflated.Pixels);
     }
 
     [Theory]
     [MemberData(nameof(Barcodes))]
-    public void FixedHuffman_MatchesBitMatrix(BarcodeFormat format, string content, int width, int height, bool pureBarcode)
+    public void Deflater_MatchesBitMatrix(bool dynamicHuffman, BarcodeFormat format, string content, int width, int height, bool pureBarcode)
     {
+        var compression = dynamicHuffman ? PngCompression.DynamicHuffman : PngCompression.FixedHuffman;
         if (!pureBarcode) return; // text is drawn below the barcode
 
-        var writer = CreateWriter(format, width, height, pureBarcode, PngCompression.FixedHuffman);
+        var writer = CreateWriter(format, width, height, pureBarcode, compression);
         var matrix = writer.Encode(content);
         var image = Decode(ToBytes(writer.Write(content)));
 
@@ -55,12 +71,16 @@ public class FixedHuffmanDeflaterTests
     }
 
     [Theory]
-    [InlineData(BarcodeFormat.QR_CODE, "https://example.com")]
-    [InlineData(BarcodeFormat.CODE_128, "Hello World")]
-    [InlineData(BarcodeFormat.DATA_MATRIX, "Hello World")]
-    public void FixedHuffman_RoundTripsThroughZXingReader(BarcodeFormat format, string content)
+    [InlineData(false, BarcodeFormat.QR_CODE, "https://example.com")]
+    [InlineData(false, BarcodeFormat.CODE_128, "Hello World")]
+    [InlineData(false, BarcodeFormat.DATA_MATRIX, "Hello World")]
+    [InlineData(true, BarcodeFormat.QR_CODE, "https://example.com")]
+    [InlineData(true, BarcodeFormat.CODE_128, "Hello World")]
+    [InlineData(true, BarcodeFormat.DATA_MATRIX, "Hello World")]
+    public void Deflater_RoundTripsThroughZXingReader(bool dynamicHuffman, BarcodeFormat format, string content)
     {
-        var image = Decode(Generate(format, content, 0, 0, true, PngCompression.FixedHuffman));
+        var compression = dynamicHuffman ? PngCompression.DynamicHuffman : PngCompression.FixedHuffman;
+        var image = Decode(Generate(format, content, 0, 0, true, compression));
         var gray = image.Pixels.Select(white => white ? (byte)255 : (byte)0).ToArray();
         var reader = new BarcodeReaderGeneric { Options = { PossibleFormats = [format], PureBarcode = true } };
 
@@ -70,23 +90,36 @@ public class FixedHuffmanDeflaterTests
         Assert.Equal(content, result.Text);
     }
 
-    [Theory]
-    [InlineData(1, 1, 1)]
-    [InlineData(1, 50, 1)]
-    [InlineData(9, 7, 2)]
-    [InlineData(16, 200, 3)]
-    [InlineData(64, 500, 4)]
-    [InlineData(2063, 40, 5)]
-    [InlineData(2064, 40, 6)]
-    [InlineData(2072, 40, 7)]
-    [InlineData(4000, 300, 8)]
-    [InlineData(100, 5000, 9)]
-    public void FixedHuffman_RandomImages_DecodeToWrittenRows(int width, int height, int seed)
+    public static TheoryData<bool, int, int, int> RandomImages
     {
+        get
+        {
+            var data = new TheoryData<bool, int, int, int>();
+            foreach (var dynamicHuffman in DynamicHuffman)
+                foreach (var (width, height, seed) in RandomImageCases)
+                    data.Add(dynamicHuffman, width, height, seed);
+            return data;
+        }
+    }
+
+    private static readonly (int, int, int)[] RandomImageCases =
+    [
+        (1, 1, 1), (1, 50, 1), (9, 7, 2), (16, 200, 3), (64, 500, 4), (2063, 40, 5), (2064, 40, 6), (2072, 40, 7), (4000, 300, 8), (100, 5000, 9),
+        // all random rows, so many distinct literal and distance symbols
+        (800, 400, -1), (3, 3000, -2),
+    ];
+
+    [Theory]
+    [MemberData(nameof(RandomImages))]
+    public void Deflater_RandomImages_DecodeToWrittenRows(bool dynamicHuffman, int width, int height, int seed)
+    {
+        var compression = dynamicHuffman ? PngCompression.DynamicHuffman : PngCompression.FixedHuffman;
         var random = new Random(seed);
         var widthInBytes = (width + 7) >> 3;
-        // a small pool of rows, so identical rows recur both adjacently and further back
-        var pool = Enumerable.Range(0, 6).Select(i => CreateRow(random, widthInBytes, i)).ToArray();
+        // a small pool of rows, so identical rows recur both adjacently and further back; negative seeds use fully random rows
+        var pool = seed < 0
+            ? Enumerable.Range(0, height).Select(_ => CreateRow(random, widthInBytes, 2)).ToArray()
+            : Enumerable.Range(0, 6).Select(i => CreateRow(random, widthInBytes, i)).ToArray();
 
         var rows = new List<byte[]>();
         while (rows.Count < height)
@@ -96,7 +129,7 @@ public class FixedHuffmanDeflaterTests
             for (int i = 0; i < repeat; i++) rows.Add(row);
         }
 
-        using var imageWriter = new PngImageWriter(width, height, null, PngCompression.FixedHuffman);
+        using var imageWriter = new PngImageWriter(width, height, null, compression);
         foreach (var row in rows) imageWriter.WriteLine(row.AsSpan());
         imageWriter.Finish();
 
@@ -223,5 +256,47 @@ public class FixedHuffmanDeflaterTests
             s2 = (s2 + s1) % 65521;
         }
         return (s2 << 16) | s1;
+    }
+}
+
+public class PngDeflaterCodeLengthTests
+{
+    [Theory]
+    [InlineData(2, 15)]
+    [InlineData(30, 15)]
+    [InlineData(40, 15)]
+    [InlineData(19, 7)]
+    [InlineData(286, 15)]
+    public void BuildCodeLengths_SkewedFrequencies_AreLimitedAndComplete(int symbols, int maxLength)
+    {
+        // Fibonacci frequencies give an unlimited Huffman code one level deeper per symbol
+        var frequencies = new int[symbols];
+        const int cap = int.MaxValue >> 9;
+        int a = 1, b = 1;
+        for (int i = 0; i < symbols; i++)
+        {
+            frequencies[i] = a;
+            (a, b) = (b, Math.Min(a + b, cap));
+        }
+
+        var lengths = new byte[symbols];
+        PngDeflater.BuildCodeLengths(frequencies, lengths, maxLength);
+
+        Assert.All(lengths, l => Assert.InRange(l, 1, maxLength));
+        // Kraft sum of exactly 1: the code is complete and decodable
+        var kraft = lengths.Sum(l => 1L << (maxLength - l));
+        Assert.Equal(1L << maxLength, kraft);
+        // more frequent symbols never get longer codes
+        for (int i = 1; i < symbols; i++)
+            if (frequencies[i] > frequencies[i - 1]) Assert.True(lengths[i] <= lengths[i - 1]);
+    }
+
+    [Fact]
+    public void BuildCodeLengths_UnusedSymbols_HaveLengthZero()
+    {
+        var frequencies = new int[] { 0, 5, 0, 3, 1, 0 };
+        var lengths = new byte[frequencies.Length];
+        PngDeflater.BuildCodeLengths(frequencies, lengths, 15);
+        Assert.Equal(new byte[] { 0, 1, 0, 2, 2, 0 }, lengths);
     }
 }

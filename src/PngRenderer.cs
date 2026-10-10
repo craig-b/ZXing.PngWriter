@@ -29,7 +29,7 @@ namespace ZXing.PngWriter
         /// <summary>
         /// How the image data is compressed
         /// </summary>
-        internal PngCompression Compression { get; set; } = PngCompression.FixedHuffman;
+        internal PngCompression Compression { get; set; } = PngCompression.DynamicHuffman;
 
         /// <summary>
         /// Renders the specified matrix to its graphically representation

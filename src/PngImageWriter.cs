@@ -31,14 +31,19 @@ namespace ZXing.PngWriter
         ZLib,
 
         /// <summary>
-        /// Scan lines written directly as a fixed Huffman deflate block by <see cref="FixedHuffmanDeflater"/>
+        /// Scan lines written directly as a fixed Huffman deflate block by <see cref="PngDeflater"/>
         /// </summary>
         FixedHuffman,
+
+        /// <summary>
+        /// Scan lines written directly by <see cref="PngDeflater"/> as a dynamic Huffman deflate block, or fixed Huffman if smaller
+        /// </summary>
+        DynamicHuffman,
     }
 
     internal sealed class PngImageWriter : IDisposable
     {
-        public PngImageWriter(int width, int height, TextualInformation? textualInformation = null, PngCompression compression = PngCompression.FixedHuffman)
+        public PngImageWriter(int width, int height, TextualInformation? textualInformation = null, PngCompression compression = PngCompression.DynamicHuffman)
         {
             _widthInBytes = (width + 7) >> 3;
             _height = height;
@@ -139,24 +144,24 @@ namespace ZXing.PngWriter
             if (_disposed) ThrowDisposedException();
             if (_linesWritten < _height) throw new InvalidOperationException($"Written {_linesWritten:n0} lines, expected {_height:n0}");
 
-            if (_compression == PngCompression.FixedHuffman)
-                WriteFixedHuffmanData();
-            else
+            if (_compression == PngCompression.ZLib)
                 WriteZLibData();
+            else
+                WriteDeflaterData(_compression == PngCompression.DynamicHuffman);
             Dispose();
 
             WriteEnd();
             Stream.Position = 0;
         }
 
-        private void WriteFixedHuffmanData()
+        private void WriteDeflaterData(bool dynamicHuffman)
         {
             var stream = Stream;
             var lengthPosition = stream.Position;
             stream.WriteInt(0);
             stream.Write(DatType);
 
-            FixedHuffmanDeflater.Write(stream, _rows, _runOffsets.AsSpan(0, _runCount), _runCounts.AsSpan(0, _runCount), _widthInBytes);
+            PngDeflater.Write(stream, _rows, _runOffsets.AsSpan(0, _runCount), _runCounts.AsSpan(0, _runCount), _widthInBytes, dynamicHuffman);
 
             var dataLength = (int)(stream.Position - lengthPosition - 8);
             stream.WriteUInt(Crc32.HashToUInt32(stream.GetBuffer().AsSpan((int)lengthPosition + 4, 4 + dataLength)));

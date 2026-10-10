@@ -8,13 +8,14 @@ using PngWriter = ZXing.PngWriter.PngWriter;
 if (args.Length > 0 && args[0] == "sizes")
 {
     // compare encoded size of each compression for every case
-    Console.WriteLine($"| Case | ZLib (bytes) | FixedHuffman (bytes) | Difference |");
-    Console.WriteLine($"|---|---:|---:|---:|");
+    Console.WriteLine($"| Case | ZLib (bytes) | FixedHuffman (bytes) | DynamicHuffman (bytes) | Difference to ZLib |");
+    Console.WriteLine($"|---|---:|---:|---:|---:|");
     foreach (var c in CompressionBenchmarks.AllCases)
     {
         var zlib = CompressionBenchmarks.Generate(c, PngCompression.ZLib).Length;
         var fixedHuffman = CompressionBenchmarks.Generate(c, PngCompression.FixedHuffman).Length;
-        Console.WriteLine($"| {c} | {zlib:n0} | {fixedHuffman:n0} | {(fixedHuffman - zlib) * 100.0 / zlib:+0.0;-0.0}% |");
+        var dynamicHuffman = CompressionBenchmarks.Generate(c, PngCompression.DynamicHuffman).Length;
+        Console.WriteLine($"| {c} | {zlib:n0} | {fixedHuffman:n0} | {dynamicHuffman:n0} | {(dynamicHuffman - zlib) * 100.0 / zlib:+0.0;-0.0}% |");
     }
     return;
 }
@@ -24,7 +25,7 @@ if (args.Length > 1 && args[0] == "dump")
     // write each case's PNG for external analysis
     Directory.CreateDirectory(args[1]);
     foreach (var c in CompressionBenchmarks.AllCases)
-        foreach (var compression in new[] { PngCompression.ZLib, PngCompression.FixedHuffman })
+        foreach (var compression in Enum.GetValues<PngCompression>())
             File.WriteAllBytes(Path.Combine(args[1], $"{c.Name} {compression}.png"), CompressionBenchmarks.Generate(c, compression));
     return;
 }
@@ -59,8 +60,8 @@ public class CompressionBenchmarks
     [ParamsSource(nameof(Cases))]
     public BarcodeCase Case { get; set; } = AllCases[0];
 
-    [Params(false, true)]
-    public bool FixedHuffman { get; set; }
+    [Params("ZLib", "FixedHuffman", "DynamicHuffman")]
+    public string Compression { get; set; } = "ZLib";
 
     private PngWriter _writer = null!;
     private ZXing.Common.BitMatrix _matrix = null!;
@@ -68,7 +69,7 @@ public class CompressionBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _writer = CreateWriter(Case, FixedHuffman ? PngCompression.FixedHuffman : PngCompression.ZLib);
+        _writer = CreateWriter(Case, Enum.Parse<PngCompression>(Compression));
         _matrix = _writer.Encode(Case.Content);
     }
 
