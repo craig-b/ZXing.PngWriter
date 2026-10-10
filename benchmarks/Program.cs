@@ -63,12 +63,26 @@ public class CompressionBenchmarks
     public bool FixedHuffman { get; set; }
 
     private PngWriter _writer = null!;
+    private ZXing.Common.BitMatrix _matrix = null!;
 
     [GlobalSetup]
-    public void Setup() => _writer = CreateWriter(Case, FixedHuffman ? PngCompression.FixedHuffman : PngCompression.ZLib);
+    public void Setup()
+    {
+        _writer = CreateWriter(Case, FixedHuffman ? PngCompression.FixedHuffman : PngCompression.ZLib);
+        _matrix = _writer.Encode(Case.Content);
+    }
 
+    /// <summary>
+    /// Barcode encoding and PNG rendering
+    /// </summary>
     [Benchmark]
     public Stream Write() => _writer.Write(Case.Content);
+
+    /// <summary>
+    /// PNG rendering only, from an already encoded barcode
+    /// </summary>
+    [Benchmark]
+    public Stream Render() => _writer.Renderer.Render(_matrix, Case.Format, Case.Content, _writer.Options);
 
     internal static byte[] Generate(BarcodeCase c, PngCompression compression)
     {
